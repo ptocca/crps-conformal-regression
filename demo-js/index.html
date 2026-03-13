@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RegressionVenn Demo</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app-header">LOO-CRPS Conformal Regression with Optimal Binning</div>
+  <div id="content">
+  <aside id="sidebar">
+    <div class="sidebar-section">
+      <h3>Data Generating Process</h3>
+      <label for="preset-select">Preset</label>
+      <select id="preset-select"></select>
+
+      <label for="code-editor" style="margin-top:10px">Custom Data Generating Process (JS)</label>
+      <textarea id="code-editor" spellcheck="false"></textarea>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Parameters</h3>
+
+      <label for="n-slider">Training samples (n): <span id="n-val">150</span></label>
+      <input type="range" id="n-slider" min="100" max="1000" step="25" value="150" />
+
+      <div class="row-inputs">
+        <div>
+          <label for="x-lo">x lo</label>
+          <input type="number" id="x-lo" value="0" step="0.5" />
+        </div>
+        <div>
+          <label for="x-hi">x hi</label>
+          <input type="number" id="x-hi" value="6" step="0.5" />
+        </div>
+      </div>
+
+      <label for="kmax-slider">K_max: <span id="kmax-val">15</span></label>
+      <input type="range" id="kmax-slider" min="2" max="50" step="1" value="15" />
+
+      <label for="eps-slider">Coverage (1 − ε): <span id="eps-val">0.90</span></label>
+      <input type="range" id="eps-slider" min="0.70" max="0.99" step="0.01" value="0.90" />
+
+      <label for="seed-input">Random seed</label>
+      <input type="number" id="seed-input" value="42" min="0" step="1" style="width:100px" />
+    </div>
+
+    <button id="run-btn">&#9654; Run</button>
+    <div id="status"></div>
+  </aside>
+
+  <main id="main-area">
+    <nav id="tab-bar">
+      <button class="tab-btn active" data-tab="kselect">K Selection</button>
+      <button class="tab-btn" data-tab="partition">Partition</button>
+      <button class="tab-btn" data-tab="venn">Venn Band</button>
+      <button class="tab-btn" data-tab="pvalue">P-value Curves</button>
+      <button class="tab-btn" data-tab="fan">Fan Plot</button>
+      <button class="tab-btn" data-tab="coverage">Coverage</button>
+      <button class="tab-btn" data-tab="help">Help</button>
+    </nav>
+
+    <div id="kselect" class="tab-panel active">
+      <div class="placeholder">Click ▶ Run to generate</div>
+    </div>
+    <div id="partition" class="tab-panel">
+      <div class="placeholder">Click ▶ Run to generate</div>
+    </div>
+    <div id="venn" class="tab-panel">
+      <div class="placeholder">Click ▶ Run to generate</div>
+    </div>
+    <div id="pvalue" class="tab-panel">
+      <div class="placeholder">Click ▶ Run to generate</div>
+    </div>
+    <div id="fan" class="tab-panel">
+      <div class="placeholder">Click ▶ Run to generate</div>
+    </div>
+    <div id="coverage" class="tab-panel">
+      <div class="placeholder">Click ▶ Run to generate</div>
+    </div>
+    <div id="help" class="tab-panel help-content">
+      <h2>About</h2>
+      <p>This demo illustrates <strong>optimal binning for regression</strong> via LOO-CRPS minimisation,
+      with full conformal prediction intervals and the Venn prediction band.</p>
+
+      <h3>Method overview</h3>
+      <ol>
+        <li><strong>Optimal binning</strong>: given n training points (x<sub>i</sub>, y<sub>i</sub>) sorted by x,
+        the x-axis is partitioned into K contiguous bins. Bin boundaries minimise the total
+        LOO-CRPS (Leave-One-Out Continuous Ranked Probability Score) — a proper scoring rule for
+        distributional predictions — via dynamic programming in O(n²K) time.</li>
+
+        <li><strong>K selection</strong>: the number of bins K is chosen by a 50/50 alternating train/test
+        split. Within-sample LOO-CRPS is subject to in-sample optimism, so K must be selected on held-out data.</li>
+
+        <li><strong>Predictive distribution</strong>: for a new x*, the predictive distribution is the
+        within-bin empirical CDF.</li>
+
+        <li><strong>Venn band</strong>: the family of ECDFs obtained by adding each hypothetical label y<sub>h</sub>
+        spans a band of constant width 1/(m+1) around the ECDF.</li>
+
+        <li><strong>Conformal prediction</strong>: CRPS is used as the nonconformity score. The prediction
+        set Γ<sup>ε</sup> = {y<sub>h</sub> : p(y<sub>h</sub>) &gt; ε} satisfies P(Y* ∈ Γ<sup>ε</sup>) ≥ 1−ε
+        under exchangeability within the bin (finite-sample, distribution-free).</li>
+      </ol>
+
+      <h3>Controls</h3>
+      <table>
+        <tr><th>Control</th><th>Description</th></tr>
+        <tr><td><strong>Preset</strong></td><td>Choose a pre-defined data-generating process</td></tr>
+        <tr><td><strong>Code editor</strong></td><td>Edit the Data Generating Process directly. The top section must return a sample from Y|X=x. The variable <code>x</code> (number) and <code>rng</code> (RNG object) are in scope.</td></tr>
+        <tr><td><strong>n</strong></td><td>Number of training observations</td></tr>
+        <tr><td><strong>x lo / x hi</strong></td><td>Range of x for training data</td></tr>
+        <tr><td><strong>K_max</strong></td><td>Maximum number of bins considered during CV</td></tr>
+        <tr><td><strong>Coverage (1−ε)</strong></td><td>Target coverage level for conformal intervals</td></tr>
+        <tr><td><strong>Seed</strong></td><td>Random seed</td></tr>
+      </table>
+
+      <h3>Writing a custom Data Generating Process</h3>
+      <p>The editor has two sections separated by a special comment line.
+      The first section is the <strong>DGP body</strong>: a JS function body with <code>x</code> (number)
+      and <code>rng</code> (RNG object) in scope that must <code>return</code> one sample of Y&nbsp;|&nbsp;X=x.</p>
+      <p>The <code>rng</code> object has: <code>.normal(mean, std)</code>, <code>.uniform(lo, hi)</code>,
+      <code>.gamma(shape, scale)</code>, <code>.random()</code>.</p>
+      <p>The optional second section (after <code>// --- trueQuantile(x, p) ---</code>) is the
+      <strong>quantile body</strong>: a JS function body with <code>x</code>, <code>p</code>, and
+      <code>erfInv</code> in scope that returns the p-th quantile of Y&nbsp;|&nbsp;X=x.
+      When provided, oracle intervals (dashed red) are shown on the Fan Plot.</p>
+      <pre>// Y | X=x ~ Normal(x, 0.3*(1+x))
+const std = 0.3 * (1 + x);
+return rng.normal(x, std);
+
+// --- trueQuantile(x, p) ---
+const std = 0.3 * (1 + x);
+const z = Math.sqrt(2) * erfInv(2 * p - 1);
+return x + std * z;</pre>
+
+      <h3>Plots</h3>
+      <table>
+        <tr><th>Tab</th><th>What is shown</th></tr>
+        <tr><td><strong>K Selection</strong></td><td>Left: within-sample LOO-CRPS (subject to in-sample optimism, monotone in K). Right: cross-validated test CRPS with U-shape; K* is marked.</td></tr>
+        <tr><td><strong>Partition</strong></td><td>Training data scatter with coloured bin spans and boundary lines.</td></tr>
+        <tr><td><strong>Venn Band</strong></td><td>Within-bin ECDF and Venn prediction band (width 1/(m+1)) for four representative test points.</td></tr>
+        <tr><td><strong>P-value curves</strong></td><td>Conformal p-value p(y<sub>h</sub>) for each bin; shaded region is prediction set.</td></tr>
+        <tr><td><strong>Fan Plot</strong></td><td>Conformal prediction intervals across the x-range.</td></tr>
+        <tr><td><strong>Coverage</strong></td><td>P-value histogram + empirical coverage curve on fresh test points.</td></tr>
+      </table>
+
+      <h3>References</h3>
+      <ul>
+        <li>Vovk, V., Gammerman, A. &amp; Shafer, G. (2005). <em>Algorithmic Learning in a Random World</em>. Springer.</li>
+        <li>Source code: <a href="https://github.com/ptocca/RegressionVenn" target="_blank">github.com/ptocca/RegressionVenn</a></li>
+      </ul>
+    </div>
+  </main>
+  </div><!-- #content -->
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

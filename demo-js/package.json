@@ -1,0 +1,18 @@
+{
+  "name": "regressionvenn-demo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --outDir ../docs"
+  },
+  "dependencies": {
+    "plotly.js-dist-min": "^2.35.2"
+  },
+  "devDependencies": {
+    "@types/plotly.js": "^2.33.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}
