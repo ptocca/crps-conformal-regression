@@ -68,7 +68,7 @@ class TestSelectKCv:
     def test_infeasible_k_is_inf(self):
         x, y = self._make_data(n=20)
         _, tc = select_K_cv(x, y, K_max=15)
-        # Training set has ~10 obs; K > 5 should be inf
+        # Training set has ~16 obs (4/5 of 20); K > 8 should be inf
         assert tc[-1] == np.inf
 
     def test_k1_always_finite(self):
@@ -81,3 +81,16 @@ class TestSelectKCv:
         x, y = self._make_data(seed=0, n=200)
         K_opt, _ = select_K_cv(x, y, K_max=10)
         assert K_opt > 1
+
+    def test_custom_n_folds(self):
+        x, y = self._make_data(n=60)
+        K_opt, tc = select_K_cv(x, y, K_max=8, n_folds=3)
+        assert 1 <= K_opt <= 8
+        assert len(tc) == 8
+
+    def test_n_folds_2_matches_old_behavior(self):
+        # 2-fold interleaved = even/odd split (old alternating split)
+        x, y = self._make_data(n=60)
+        K_opt_2, tc_2 = select_K_cv(x, y, K_max=8, n_folds=2)
+        assert 1 <= K_opt_2 <= 8
+        assert np.isfinite(tc_2[0])

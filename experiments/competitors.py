@@ -1,8 +1,23 @@
 """Competitor prediction-interval methods for comparison experiments."""
 
 import numpy as np
+import pandas as pd
 from scipy.optimize import linprog
+from isodisreg import idr
 from quantile_forest import RandomForestQuantileRegressor
+
+
+def _conformal_quantile(scores: np.ndarray, epsilon: float) -> float:
+    """Return the split-conformal threshold for nonconformity scores.
+
+    Uses direct order-statistic indexing: k = ceil((1-epsilon)*(n+1)), clamped
+    to n.  This matches Romano et al. (2019) exactly.  The alternative of
+    np.quantile(scores, k/n) uses linear interpolation between adjacent order
+    statistics and returns a slightly higher (more conservative) value.
+    """
+    n = len(scores)
+    k = min(int(np.ceil((1 - epsilon) * (n + 1))), n)
+    return float(np.sort(scores)[k - 1])
 
 
 # ── Gaussian split-conformal ──────────────────────────────────────────────────
@@ -16,18 +31,13 @@ def fit_gaussian_split_conformal(
     beta, *_ = np.linalg.lstsq(X_tr, y_tr, rcond=None)
     X_cal = np.column_stack([np.ones(len(x_cal)), x_cal])
     resid = np.abs(y_cal - X_cal @ beta)
-    n_cal = len(y_cal)
-    # standard split-conformal quantile: ceil((1-eps)(n+1))/n
     return {"beta": beta, "resid_cal": resid}
 
 
 def predict_gaussian_interval(
     model: dict, x_test: np.ndarray, epsilon: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    n_cal = len(model["resid_cal"])
-    level = np.ceil((1 - epsilon) * (n_cal + 1)) / n_cal
-    level = min(level, 1.0)
-    q = np.quantile(model["resid_cal"], level)
+    q = _conformal_quantile(model["resid_cal"], epsilon)
     X_test = np.column_stack([np.ones(len(x_test)), x_test])
     yhat = X_test @ model["beta"]
     return yhat - q, yhat + q
@@ -99,10 +109,7 @@ def fit_cqr(
     q_lo_cal = predict_quantile(coef_lo, x_cal)
     q_hi_cal = predict_quantile(coef_hi, x_cal)
     scores = np.maximum(q_lo_cal - y_cal, y_cal - q_hi_cal)
-    n_cal = len(y_cal)
-    level = np.ceil((1 - epsilon) * (n_cal + 1)) / n_cal
-    level = min(level, 1.0)
-    q_hat = np.quantile(scores, level)
+    q_hat = _conformal_quantile(scores, epsilon)
     return {"coef_lo": coef_lo, "coef_hi": coef_hi, "q_hat": q_hat, "degree": degree}
 
 
@@ -154,10 +161,7 @@ def fit_cqr_qrf(
     q_lo_cal = qrf.predict(x_cal.reshape(-1, 1), quantiles=[alpha_lo]).ravel()
     q_hi_cal = qrf.predict(x_cal.reshape(-1, 1), quantiles=[alpha_hi]).ravel()
     scores = np.maximum(q_lo_cal - y_cal, y_cal - q_hi_cal)
-    n_cal = len(y_cal)
-    level = np.ceil((1 - epsilon) * (n_cal + 1)) / n_cal
-    level = min(level, 1.0)
-    q_hat = np.quantile(scores, level)
+    q_hat = _conformal_quantile(scores, epsilon)
     return {"qrf": qrf, "q_hat": q_hat, "epsilon": epsilon}
 
 
@@ -168,5 +172,47 @@ def predict_cqr_qrf_interval(
     alpha_lo, alpha_hi = epsilon / 2, 1 - epsilon / 2
     q_lo = model["qrf"].predict(x_test.reshape(-1, 1), quantiles=[alpha_lo]).ravel()
     q_hi = model["qrf"].predict(x_test.reshape(-1, 1), quantiles=[alpha_hi]).ravel()
+    q = model["q_hat"]
+    return q_lo - q, q_hi + q
+
+
+# ── Isotonic Distributional Regression (IDR) ────────────────────────────────
+
+def _fit_idr_model(x: np.ndarray, y: np.ndarray):
+    """Fit IDR on (x, y).  Returns the fitted idr object."""
+    X = pd.DataFrame({"x": x})
+    return idr(y=y, X=X, orders={"1": "comp"}, groups={"x": "1"})
+
+
+def _predict_idr_quantiles(
+    fit, x_test: np.ndarray, epsilon: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (q_lo, q_hi) arrays from an IDR fit."""
+    X_te = pd.DataFrame({"x": x_test})
+    preds = fit.predict(X_te)
+    q_lo = np.asarray(preds.qpred(quantiles=epsilon / 2))
+    q_hi = np.asarray(preds.qpred(quantiles=1 - epsilon / 2))
+    return q_lo, q_hi
+
+
+def fit_cqr_idr(
+    x_tr: np.ndarray, y_tr: np.ndarray,
+    x_cal: np.ndarray, y_cal: np.ndarray,
+    epsilon: float,
+) -> dict:
+    """Conformalized IDR: fit on training half, calibrate CQR score on cal half."""
+    fit = _fit_idr_model(x_tr, y_tr)
+    q_lo_cal, q_hi_cal = _predict_idr_quantiles(fit, x_cal, epsilon)
+    scores = np.maximum(q_lo_cal - y_cal, y_cal - q_hi_cal)
+    q_hat = _conformal_quantile(scores, epsilon)
+    return {"idr_fit": fit, "q_hat": q_hat, "epsilon": epsilon}
+
+
+def predict_cqr_idr_interval(
+    model: dict, x_test: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    q_lo, q_hi = _predict_idr_quantiles(
+        model["idr_fit"], x_test, model["epsilon"],
+    )
     q = model["q_hat"]
     return q_lo - q, q_hi + q

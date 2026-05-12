@@ -12,6 +12,7 @@ from experiments.competitors import (
     fit_gaussian_split_conformal, predict_gaussian_interval,
     fit_cqr, predict_cqr_interval,
     fit_cqr_qrf, predict_cqr_qrf_interval,
+    fit_cqr_idr, predict_cqr_idr_interval,
 )
 
 plt.rcParams.update({
@@ -59,6 +60,7 @@ x_cal, y_cal = x[cal_idx], y[cal_idx]
 gauss_model    = fit_gaussian_split_conformal(x_tr, y_tr, x_cal, y_cal)
 cqr_model      = fit_cqr(x_tr, y_tr, x_cal, y_cal, EPSILON, degree=3)
 cqr_qrf_model  = fit_cqr_qrf(x_tr, y_tr, x_cal, y_cal, EPSILON)
+cqr_idr_model  = fit_cqr_idr(x_tr, y_tr, x_cal, y_cal, EPSILON)
 
 # ── Coverage evaluation on calibration half ───────────────────────────────────
 
@@ -77,12 +79,14 @@ our_hi = np.array([our_interval(xq)[1] for xq in x_cal])
 gauss_lo, gauss_hi     = predict_gaussian_interval(gauss_model, x_cal, EPSILON)
 cqr_lo,   cqr_hi       = predict_cqr_interval(cqr_model, x_cal)
 cqr_qrf_lo, cqr_qrf_hi = predict_cqr_qrf_interval(cqr_qrf_model, x_cal)
+idr_lo,     idr_hi      = predict_cqr_idr_interval(cqr_idr_model, x_cal)
 
 results = {
     "Our method":         coverage_width(our_lo,      our_hi,      y_cal),
     "Gaussian conformal": coverage_width(gauss_lo,    gauss_hi,    y_cal),
     "CQR (cubic)":        coverage_width(cqr_lo,      cqr_hi,      y_cal),
     "CQR-QRF":            coverage_width(cqr_qrf_lo,  cqr_qrf_hi,  y_cal),
+    "CQR-IDR":            coverage_width(idr_lo,      idr_hi,      y_cal),
 }
 
 print(f"\nOld Faithful — nominal coverage {int(100*(1-EPSILON))}%")
@@ -164,6 +168,7 @@ our_hi_d  = np.array([our_interval(xq)[1] for xq in x_dense])
 g_lo_d, g_hi_d   = predict_gaussian_interval(gauss_model, x_dense, EPSILON)
 c_lo_d, c_hi_d   = predict_cqr_interval(cqr_model, x_dense)
 cq_lo_d, cq_hi_d = predict_cqr_qrf_interval(cqr_qrf_model, x_dense)
+idr_lo_d, idr_hi_d = predict_cqr_idr_interval(cqr_idr_model, x_dense)
 
 fig, ax = plt.subplots(figsize=(10, 4.5))
 ax.scatter(x, y, s=14, alpha=0.45, color="steelblue", zorder=4, label="Data")
@@ -180,6 +185,9 @@ ax.plot(x_dense, c_hi_d, "-.", color="darkorange", lw=1.5)
 
 ax.plot(x_dense, cq_lo_d, ":", color="purple",    lw=2.0, label="CQR-QRF")
 ax.plot(x_dense, cq_hi_d, ":", color="purple",    lw=2.0)
+
+ax.plot(x_dense, idr_lo_d, "-", color="forestgreen", lw=1.5, alpha=0.8, label="CQR-IDR")
+ax.plot(x_dense, idr_hi_d, "-", color="forestgreen", lw=1.5, alpha=0.8)
 
 for edge in edges[1:-1]:
     ax.axvline(edge, color="grey", lw=0.8, ls=":")

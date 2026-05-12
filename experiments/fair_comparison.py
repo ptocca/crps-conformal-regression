@@ -20,6 +20,7 @@ from experiments.competitors import (
     fit_gaussian_split_conformal, predict_gaussian_interval,
     fit_cqr, predict_cqr_interval,
     fit_cqr_qrf, predict_cqr_qrf_interval,
+    fit_cqr_idr, predict_cqr_idr_interval,
 )
 from save_figures import (
     precompute_costs, optimal_partition, bin_x_boundaries,
@@ -43,6 +44,7 @@ METHODS = [
     "Gaussian conformal",
     "CQR (cubic)",
     "CQR-QRF",
+    "CQR-IDR",
 ]
 
 # ── Per-split runner ──────────────────────────────────────────────────────────
@@ -120,6 +122,13 @@ def run_split(x, y, tr_idx, cal_idx,
     results["CQR-QRF"] = (
         float(np.mean((y_cal >= cq_lo) & (y_cal <= cq_hi))),
         float(np.mean(cq_hi - cq_lo)),
+    )
+
+    cqr_idr = fit_cqr_idr(x_tr, y_tr, x_cal, y_cal, EPSILON)
+    idr_lo, idr_hi = predict_cqr_idr_interval(cqr_idr, x_cal)
+    results["CQR-IDR"] = (
+        float(np.mean((y_cal >= idr_lo) & (y_cal <= idr_hi))),
+        float(np.mean(idr_hi - idr_lo)),
     )
 
     return results

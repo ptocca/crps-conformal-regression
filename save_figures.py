@@ -64,12 +64,9 @@ def crps_empirical(ys, y):
     if m == 0: return np.nan
     return np.mean(np.abs(ys - y)) - pairwise_abs_sum(ys) / m ** 2
 
-def select_K_cv(x, y, K_max):
-    n = len(x)
-    tr = np.arange(0, n, 2); te = np.arange(1, n, 2)
-    x_tr, y_tr = x[tr], y[tr]; x_te, y_te = x[te], y[te]
+def _evaluate_fold(x_tr, y_tr, x_te, y_te, K_max):
     C_tr = precompute_costs(y_tr)
-    tc = np.full(K_max, np.inf)
+    fc = np.full(K_max, np.inf)
     for K in range(1, K_max + 1):
         if K > len(y_tr) // 2: break
         bp, _ = optimal_partition(y_tr, K, C=C_tr)
@@ -80,7 +77,19 @@ def select_K_cv(x, y, K_max):
                      bp[int(np.clip(np.searchsorted(edges, xq, 'right') - 1, 0, Kb - 1)) + 1]],
                 yq)
             for xq, yq in zip(x_te, y_te))
-        tc[K - 1] = total / len(y_te)
+        fc[K - 1] = total / len(y_te)
+    return fc
+
+def select_K_cv(x, y, K_max, n_folds=5):
+    n = len(x)
+    fold_ids = np.arange(n) % n_folds
+    all_fc = np.full((n_folds, K_max), np.inf)
+    for f in range(n_folds):
+        tr = fold_ids != f; te = fold_ids == f
+        x_tr, y_tr = x[tr], y[tr]; x_te, y_te = x[te], y[te]
+        if len(x_te) == 0 or len(x_tr) < 4: continue
+        all_fc[f] = _evaluate_fold(x_tr, y_tr, x_te, y_te, K_max)
+    tc = np.mean(all_fc, axis=0)
     return int(np.argmin(tc)) + 1, tc
 
 def conformal_pvalue_grid(yb, yh):
@@ -159,8 +168,12 @@ print("Saved fig_partition.pdf")
 # ── Fig 3: Venn band ──────────────────────────────────────────────────────────
 
 t_grid = np.linspace(-5, 25, 500)
-fig, axes = plt.subplots(1, K_opt, figsize=(4 * K_opt, 3.8), sharey=True)
-for b, ax in enumerate(axes):
+n_cols = 3
+n_rows = (K_opt + n_cols - 1) // n_cols
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows), sharey=True)
+axes_flat = axes.flatten()
+for b in range(K_opt):
+    ax = axes_flat[b]
     lo, hi = bp[b], bp[b + 1]; yb = y[lo:hi]; m = len(yb)
     x_mid = 0.5 * (x[lo] + x[hi - 1])
     F_m = np.mean(yb[:, None] <= t_grid[None, :], axis=0)
@@ -173,10 +186,13 @@ for b, ax in enumerate(axes):
     ax.plot(t_grid, true_cdf, '--', color='tomato', lw=1.5,
             label=f'True CDF at $x = {x_mid:.2f}$')
     ax.set_title(f'Bin {b+1},  $m = {m}$')
-    ax.set_xlabel('$t$'); ax.legend()
+    ax.set_xlabel('$t$'); ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
-axes[0].set_ylabel('$F(t)$')
-fig.suptitle('Venn prediction band (shaded) around training ECDF', y=1.02)
+for b in range(K_opt, len(axes_flat)):
+    axes_flat[b].set_visible(False)
+for r in range(n_rows):
+    axes[r, 0].set_ylabel('$F(t)$')
+fig.suptitle('Venn prediction band (shaded) around training ECDF', y=1.01)
 plt.tight_layout()
 fig.savefig(f"{FIGDIR}/fig_venn.pdf", bbox_inches="tight")
 plt.close(fig)
@@ -185,13 +201,22 @@ print("Saved fig_venn.pdf")
 # ── Fig 4: p-value curves ─────────────────────────────────────────────────────
 
 x_queries = [0.3, 1.5, 2.7]
-fig, axes = plt.subplots(1, len(x_queries), figsize=(6 * len(x_queries), 3.8))
+# Compute a shared x-axis range across all three panels
+shared_lo, shared_hi = np.inf, -np.inf
+for xq in x_queries:
+    bin_idx = int(np.clip(np.searchsorted(edges, xq, 'right') - 1, 0, K_opt - 1))
+    lo, hi = bp[bin_idx], bp[bin_idx + 1]; yb = y[lo:hi]
+    std = np.std(yb)
+    shared_lo = min(shared_lo, yb.mean() - 3.5 * std)
+    shared_hi = max(shared_hi, yb.mean() + 3.5 * std)
+
+fig, axes = plt.subplots(1, len(x_queries), figsize=(6 * len(x_queries), 3.8),
+                         sharey=True)
 axes = np.atleast_1d(axes)
 for ax, xq in zip(axes, x_queries):
     bin_idx = int(np.clip(np.searchsorted(edges, xq, 'right') - 1, 0, K_opt - 1))
     lo, hi = bp[bin_idx], bp[bin_idx + 1]; yb = y[lo:hi]; m = len(yb)
-    std = np.std(yb)
-    yg = np.linspace(yb.mean() - 3.5 * std, yb.mean() + 3.5 * std, 800)
+    yg = np.linspace(shared_lo, shared_hi, 800)
     pv = conformal_pvalue_grid(yb, yg); mask = pv > epsilon
     ax.plot(yg, pv, color='steelblue', lw=1.5)
     ax.axhline(epsilon, color='grey', lw=1, ls='--', label=f'$\\varepsilon = {epsilon}$')
@@ -202,8 +227,10 @@ for ax, xq in zip(axes, x_queries):
     ax.axvline(tlo, color='tomato', lw=1.5, label='True 90\\% interval')
     ax.axvline(thi, color='tomato', lw=1.5)
     ax.set_title(f'$x^* = {xq}$,  bin {bin_idx+1},  $m = {m}$')
-    ax.set_xlabel('$y_h$'); ax.set_ylabel('$p(y_h)$')
+    ax.set_xlabel('$y_h$')
+    ax.set_xlim(shared_lo, shared_hi)
     ax.legend(); ax.grid(True, alpha=0.3)
+axes[0].set_ylabel('$p(y_h)$')
 fig.suptitle(f'Conformal p-value as a function of $y_h$  ($\\varepsilon = {epsilon}$)', y=1.02)
 plt.tight_layout()
 fig.savefig(f"{FIGDIR}/fig_pvalue.pdf", bbox_inches="tight")
@@ -280,5 +307,72 @@ plt.tight_layout()
 fig.savefig(f"{FIGDIR}/fig_coverage.pdf", bbox_inches="tight")
 plt.close(fig)
 print("Saved fig_coverage.pdf")
+
+# ── Fig 7: per-bin conditional coverage ──────────────────────────────────────
+
+# Assign each test point to its bin
+bin_ids_te = np.array([
+    int(np.clip(np.searchsorted(edges, xq, 'right') - 1, 0, K_opt - 1))
+    for xq in x_te
+])
+
+eps_levels = [0.05, 0.10, 0.20]
+fig, ax = plt.subplots(figsize=(8, 4))
+bar_w = 0.25
+offsets = np.arange(len(eps_levels)) - 1
+cmap = ['#1f77b4', '#ff7f0e', '#2ca02c']
+
+print("\n=== Per-bin conditional coverage ===")
+for j, eps in enumerate(eps_levels):
+    cov_per_bin = []
+    for b in range(K_opt):
+        mask = bin_ids_te == b
+        n_b = mask.sum()
+        cov = np.mean(pvals_te[mask] > eps) if n_b > 0 else np.nan
+        cov_per_bin.append(cov)
+        print(f"  Bin {b+1} (n_te={n_b}): eps={eps}, coverage={cov*100:.1f}% (nominal {100*(1-eps):.0f}%)")
+    ax.bar(np.arange(K_opt) + offsets[j] * bar_w, cov_per_bin, bar_w,
+           color=cmap[j], alpha=0.8, label=f'$\\varepsilon={eps}$  (nom. {100*(1-eps):.0f}\\%)')
+    ax.axhline(1 - eps, color=cmap[j], ls='--', lw=1, alpha=0.5)
+
+ax.set_xticks(np.arange(K_opt))
+ax.set_xticklabels([f'Bin {b+1}\n($m={bp[b+1]-bp[b]}$)' for b in range(K_opt)])
+ax.set_ylabel('Empirical coverage')
+ax.set_ylim(0.65, 1.02)
+ax.set_title(f'Conditional coverage per bin (test set $n = {n_te}$)')
+ax.legend(loc='lower right')
+ax.grid(True, alpha=0.3, axis='y')
+plt.tight_layout()
+fig.savefig(f"{FIGDIR}/fig_conditional_coverage.pdf", bbox_inches="tight")
+plt.close(fig)
+print("Saved fig_conditional_coverage.pdf")
+
+# ── Fig 8: PIT histograms per bin ────────────────────────────────────────────
+
+# PIT for test point (xq, yq) in bin b: F_hat_b(yq) = (# training y_b <= yq) / m_b
+pit_vals = np.array([
+    np.mean(y[bp[b]:bp[b+1]] <= yq)
+    for b, yq in zip(bin_ids_te, y_te)
+])
+
+n_cols = min(K_opt, 6)
+fig, axes = plt.subplots(1, n_cols, figsize=(3.5 * n_cols, 3.2), sharey=True)
+axes = np.atleast_1d(axes)
+for b, ax in enumerate(axes):
+    mask = bin_ids_te == b
+    ax.hist(pit_vals[mask], bins=10, density=True, color=colors[b % len(colors)],
+            alpha=0.7, edgecolor='white', linewidth=0.5)
+    ax.axhline(1.0, color='tomato', ls='--', lw=1.5)
+    m_b = bp[b+1] - bp[b]
+    ax.set_title(f'Bin {b+1}  ($m = {m_b}$)')
+    ax.set_xlabel('PIT')
+    ax.set_xlim(0, 1)
+    ax.grid(True, alpha=0.3, axis='y')
+axes[0].set_ylabel('Density')
+fig.suptitle(f'PIT histograms per bin (test set $n = {n_te}$)', y=1.02)
+plt.tight_layout()
+fig.savefig(f"{FIGDIR}/fig_pit.pdf", bbox_inches="tight")
+plt.close(fig)
+print("Saved fig_pit.pdf")
 
 print("\nAll figures saved.")
