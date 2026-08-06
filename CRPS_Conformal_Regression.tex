@@ -30,10 +30,15 @@
 
 \maketitle
 
+
+% \begin{center}
+% \small\textit{Submitted to the Conformal and Probabilistic Prediction with Applications (COPA 2026).}
+% \end{center}
+
 \begin{abstract}
-We propose a method for non-parametric conditional distribution estimation based on
-partitioning covariate-sorted observations into contiguous bins and using the within-bin
-empirical CDF as the predictive distribution.
+We propose a non-parametric, model-free method for conditional distribution estimation
+based on partitioning covariate-sorted observations into contiguous bins and using the
+within-bin empirical CDF as the predictive distribution.
 Bin boundaries are chosen to minimise the total leave-one-out Continuous Ranked Probability
 Score (LOO-CRPS), which admits a closed-form cost function with $O(n^2 \log n)$
 precomputation and $O(n^2)$ storage; the globally optimal $K$-partition is recovered by a
@@ -45,13 +50,15 @@ criterion with a well-defined minimum.
 Having selected $K^*$ and fitted the full-data partition, we form
 a conformal prediction set based on CRPS
 as the nonconformity score, which carries a finite-sample marginal coverage guarantee at
-any prescribed level $\varepsilon$. The conformal prediction is transductive and data-efficient,
-as all observations are used for both partitioning and p-value calculation, with no need to
+any prescribed level $\varepsilon$. The conformal prediction is transductive and data-efficient, 
+as all observations are used for both partitioning and p-value calculation, with no need to 
 reserve a hold-out set.
-On real benchmarks against split-conformal competitors (Gaussian split conformal,
-CQR, CQR-QRF, and conformalized isotonic distributional regression), the full-$n$
+On real-world small-data benchmarks against split-conformal competitors (Gaussian split conformal,
+CQR, CQR-QRF, CHR, and conformalized isotonic distributional regression), the full-$n$
 method produces narrower prediction intervals while maintaining near-nominal coverage;
-a matched-sample comparison restricting to the same training half as the competitors is also reported.
+the advantage is not as clear-cut however in a matched-sample comparison restricted to the 
+same training half as the competitors. Similarly, a comparison against 
+QOOB, another transductive competitor, provides mixed results.
 \end{abstract}
 
 \noindent\textbf{Keywords:} conformal prediction, conformal regression, distribution-free, non-parametric regression, optimal binning
@@ -62,10 +69,15 @@ A fundamental problem in supervised learning is to estimate not just the conditi
 $\mathbb{E}[Y \mid X=x]$ but the full conditional distribution $P(Y \mid X=x)$.
 A distributional forecast quantifies uncertainty and therefore enables principled decision-making under
 risk, hypothesis testing at a test point, and the construction of valid prediction sets.
+% For example, predicting a vehicle's head-acceleration profile after a simulated collision
+% from the time elapsed, or the duration of Old Faithful's next eruption from the waiting
+% time since the last one, requires the \emph{whole} conditional distribution rather than a
+% point estimate, since both responses are visibly heteroscedastic or bimodal in $x$
+% (Section~\ref{sec:realdata} revisits both as real-data experiments).
 
 The simplest non-parametric approach is to collect nearby training observations and use
 their Empirical Cumulative Distribution Function (ECDF) as a stand-in for $P(Y \mid X=x)$.
-Other approaches exist, e.g. Kernel density methods, but they have high sensitivity to bandwidth choice
+Other approaches exist, e.g. Kernel density methods, but they have high sensitivity to bandwidth choice 
 or significant computational requirements.
 
 When the covariate is one-dimensional and the data are sorted by $x$, a natural alternative
@@ -80,7 +92,7 @@ Informal choices, such as equal-width or equal-count bins, are oblivious to the
 heteroscedasticity of the response and to the local density of the covariate.
 We argue that bin boundaries should minimise a proper scoring rule evaluated on the
 training data, so that the binning criterion and the predictive goal are aligned.
-Among proper scoring rules, the Continuous Ranked Probability Score (CRPS) is particularly
+Among proper scoring rules, the Continuous Ranked Probability Score (CRPS) is particularly 
 well suited to this purpose: it
 targets the full distribution (not a single functional), it admits a closed-form
 leave-one-out formula that depends only on pairwise absolute differences, and it is the
@@ -114,12 +126,23 @@ and prediction-set construction.
     The regression form of the Venn Predictor (a constant-width family of augmented ECDFs)
     is formalised as a complementary output in Appendix~\ref{app:venn}.
 \end{enumerate}
-A distinguishing feature of the method is that it is \emph{transductive}: all $n$
+A notable feature of the method is that it is \emph{transductive}: all $n$
 observations are used for both partitioning and conformal calibration, with no
 data held out.
 Split-conformal competitors must reserve a calibration set, effectively halving
-the sample available for model fitting.
-This data-efficiency advantage is particularly pronounced in small-sample settings.
+the sample available for model fitting; this data-efficiency advantage is
+particularly pronounced in small-sample settings, though not unique to this
+construction, as most other conformal procedures can equally be cast in a full/
+transductive (or jackknife+/CV+) form. (Section~\ref{sec:realdata} compares against QOOB~\citep{GuptaEtAl2022},
+another transductive method.)
+The $O(n^2K)$ dynamic programme is therefore most practical, and the transductive
+efficiency advantage most valuable, in the small-to-moderate-$n$ regime that motivates
+this work (both real-data experiments in Section~\ref{sec:realdata} have $n<300$); for
+much larger datasets a split-conformal variant, or a coarser approximate DP, would be
+preferable.
+The method is currently restricted to a one-dimensional covariate; Section~\ref{sec:additional}
+discusses two natural extensions to $d>1$ (a learned one-dimensional projection, and
+CART-style greedy splitting) along with their tractability trade-offs.
 
 %\paragraph{Organisation.}
 %Section~\ref{sec:related} surveys related work.
@@ -154,18 +177,31 @@ Mondrian conformal prediction~\citep{VovkEtAl2022} stratifies the calibration se
 categories (tax\-onomies) so that coverage holds conditionally within each stratum; our
 method is a Mondrian predictor with data-adaptive bins as strata and CRPS as the
 nonconformity score.
-~\citet{SesiaRomano2021} propose conformal prediction based on conditional
-histograms, stratifying calibration scores by the value of a one-dimensional predictor
-(such as an estimated quantile); our method instead partitions on the covariate $x$ directly
-and selects bin boundaries to minimise LOO-CRPS rather than conditioning on a downstream
-predictor score.
+~\citet{SesiaRomano2021} (CHR) build a conditional histogram of the response from a
+black-box quantile regressor, then take the shortest contiguous run of histogram bins
+reaching the target coverage, conformalized on a held-out calibration set
+(Appendix~\ref{app:chr} details our reimplementation); our method instead partitions on
+the covariate $x$ directly, selecting bin boundaries via a closed-form CRPS-optimal
+criterion, and calibrates transductively rather than via a data split
+(Section~\ref{sec:realdata} compares both empirically).
+~\citet{BaoEtAl2025} survey and empirically compare eight univariate conformal
+regression methods, providing broader benchmarking context for the split-conformal
+competitors evaluated here.
+~\citet{LuoZhou2025} construct efficient conformal intervals by thresholding
+estimated conditional interquantile densities, targeting the Neyman--Pearson-optimal
+set size via a different route than CRPS-based binning.
+~\citet{GaoEtAl2025} give a distribution-free dynamic-programming algorithm for
+near-volume-optimal prediction sets restricted to unions of $k$ intervals in the
+response space; our dynamic program instead partitions the covariate space into
+contiguous bins and is tied specifically to the CRPS-optimal criterion rather than
+general volume minimisation.
 
 \paragraph{Venn predictors.}
 Venn predictors output a set of probability distributions, one for
 each candidate label of the test point.
 This work draws much of its inspiration from the Venn-ABERS predictors for binary
-classification proposed by ~\citet{VovkPetej2014}: isotonic regression
-on an underlying scoring function implicitly identifies an optimal partition of the
+classification proposed by ~\citet{VovkPetej2014}: isotonic regression 
+on an underlying scoring function implicitly identifies an optimal partition of the 
 score range into reference classes, each with finite-sample calibration guarantees.
 Our method mirrors this structure on the covariate axis: the DP selects CRPS-optimal
 bins, defining reference classes whose within-bin ECDF best describes the local
@@ -364,9 +400,9 @@ For a bin spanning sorted indices $i$ through $j$ (with $m = j - i + 1$), write
 
 \section{Dynamic Programme}
 \label{sec:dp}
-It turns out that it is possible to solve the optimal partitioning problem using dynamic programming.
+It turns out that it is possible to solve the optimal partitioning problem using dynamic programming. 
 The DP is efficient compared to the combinatorial explosion of exhaustive search, which would enumerate
-all $\binom{n-1}{K-1}$ candidate $K$-partitions, and is exact, unlike, say, greedy binary segmentation,
+all $\binom{n-1}{K-1}$ candidate $K$-partitions, and is exact, unlike, say, greedy binary segmentation, 
 which fixes cut points sequentially and can miss the global optimum.
 The problem of minimizing the total LOO-CRPS of a $K$-partition can be solved by a DP because the cost function
 can be expressed in a recurrence that exhibits the optimal substructure property, as we will show below.
@@ -431,10 +467,10 @@ Then
 The quantities $r$ and $S_{\le}$ are \emph{prefix queries}: a count and a sum
 over all stored values up to a query point. $S_{>}$ follows as the running total minus
 $S_{\le}$.
-Prefix queries can be supported efficiently using Fenwick trees
-(Binary Indexed Trees)~\citep{Fenwick1994}, for which searches and insertions
-can be performed in $O(\log n)$ time. We use two Fenwick trees (one for counts, one
-for values) indexed by value rank.
+Prefix queries can be supported efficiently using Fenwick trees 
+(Binary Indexed Trees)~\citep{Fenwick1994}, for which searches and insertions 
+can be performed in $O(\log n)$ time. We use two Fenwick trees (one for counts, one 
+for values) indexed by value rank.  
 Since there are $O(n)$ left endpoints and $O(n)$ extensions for each,
 the total precomputation is $O(n^2 \log n)$ with $O(n^2)$ storage.
 Data-structure trade-offs are discussed in
@@ -448,8 +484,8 @@ with each lookup of $c(i+1,j)$ taking $O(1)$ from the precomputed table.
 
 \paragraph{Complexity tightness.}
 In some cases, the efficiency of the DP can be further improved by exploiting the structure of the cost function.
-A standard result of algorithm theory often referred to as the Knuth--Yao theorem~\citep{Knuth1971,Yao1980}
-indicates that if the cost function satisfies a quadrangle inequality, then the DP can be further sped up.
+A standard result of algorithm theory often referred to as the Knuth--Yao theorem~\citep{Knuth1971,Yao1980} 
+indicates that if the cost function satisfies a quadrangle inequality, then the DP can be further sped up. 
 Unfortunately, the LOO-CRPS cost violates the quadrangle inequality (explicit counterexample in
 Appendix~\ref{app:qi}), so, at least under this respect, $O(n^2 K)$ is tight: no Knuth--Yao speedup applies.
 
@@ -463,7 +499,7 @@ As an alternative, one could place a Dirichlet process prior over the partition;
 is then determined by the concentration parameter rather than cross-validation.
 While principled, this approach does not in general minimise CRPS, and the choice
 of concentration parameter introduces a separate hyperparameter.
-We use CV as a simpler, assumption-free alternative.}.
+We use CV as a simpler, assumption-free alternative.}. 
 As it is customary, we perform cross-validation to strike a balance between underfitting and overfitting.
 The sorted observations are assigned to folds by interleaving:
 observation $i$ (in the $x$-sorted order) goes to fold $i \bmod F$,
@@ -553,7 +589,7 @@ this section.
 \subsection{Conformal Prediction Set}
 \label{sec:conformal-set}
 
-We briefly recall the key concepts of conformal prediction~\citep{VovkEtAl2022}
+We briefly recall the key concepts of conformal prediction~\citep{VovkEtAl2022} 
 in the context of our setting and we show how to obtain valid prediction sets.
 
 \paragraph{Nonconformity score.}
@@ -737,7 +773,7 @@ directly implies that $\Gamma^\varepsilon$ is a connected interval.
 In the present transductive (full-data) setting all $m+1$ scores depend on
 $y_h$, and their relative ranking can in principle change as $y_h$ varies,
 so the split-conformal argument does not apply directly.
-We conjecture (and, to be clear, this remains an open problem) that
+We conjecture (and, to be clear, this remains an open problem) that 
 $\Gamma^\varepsilon$ remains a connected interval whenever
 $\alpha(y_h)$ is convex; in all our experiments (synthetic, Old Faithful,
 motorcycle; $m$ ranging from $22$ to $262$) the prediction set is a single
@@ -861,7 +897,9 @@ Wide bins (small $K$) average over a heterogeneous region, hurting exchangeabili
 narrow bins (large $K$) improve exchangeability but yield coarser intervals, since
 the conformal p-value grid is $\{1/(m+1),\ldots,1\}$.
 The CV criterion of Section~\ref{sec:K} penalises both failure modes and yields
-a genuine U-shaped optimum (see Appendix~\ref{app:exch} for the full analysis).
+a genuine U-shaped optimum (see Appendix~\ref{app:exch} for the full analysis);
+$K$ is effectively the method's only tuning parameter, since the construction
+imposes no fixed functional form on $P(Y\mid X=x)$.
 
 \section{Real-Data Experiments}
 \label{sec:realdata}
@@ -890,6 +928,10 @@ with standard errors reported throughout.
         $\alpha/2$ and $1-\alpha/2$ conformalized via the same CQR score
         on the calibration half.
 \end{itemize}
+Gaussian split conformal and CQR (cubic) are parametric (fixed functional
+form); CQR-QRF, CQR-IDR, QOOB~\citep{GuptaEtAl2022}, and our method are
+non-parametric, as is CHR here via its QRF black box (Appendix~\ref{app:chr})
+rather than the framework itself.
 Our method is transductive: all $n$ observations are used for both partitioning
 and conformal calibration (full-data conformal with the within-bin ECDF as
 the nonconformity score), with no data held out.
@@ -934,10 +976,21 @@ averaged over $R=200$ random 50/50 splits.
 In the matched-sample comparison (top block), our method ($n/2$, italic row)
 achieves mean width $1.27$ min with slightly sub-nominal coverage
 ($88.5 \pm 0.3\%$), narrower than all competitors: Gaussian split conformal
-($1.68$ min), CQR ($1.49$ min), CQR-IDR ($1.29$ min), and CQR-QRF ($1.33$ min).
+($1.68$ min), CQR ($1.49$ min), CQR-IDR ($1.29$ min), CQR-QRF ($1.33$ min), and
+CHR~\citep{SesiaRomano2021} ($1.31$ min).
+CHR, reimplemented independently from the published algorithm for this comparison
+(Appendix~\ref{app:chr} documents the implementation and benchmarking choices in
+detail), is narrower than CQR-QRF despite using the identical underlying
+quantile-regression forest ($1.312 \pm 0.009$ min vs.\ $1.333 \pm 0.006$ min) at
+closely comparable coverage.
 When all $n$ observations are used (bold row, below the line), our method achieves
 $90.6 \pm 0.1\%$ coverage with mean width $1.22$ min.
-All split-conformal methods exceed nominal coverage ($91.2$--$91.4\%$).
+All split-conformal methods exceed nominal coverage ($90.6$--$91.4\%$).
+Among full-data transductive competitors, QOOB~\citep{GuptaEtAl2022} achieves a
+narrower interval still ($1.157 \pm 0.001$ min at $92.5 \pm 0.1\%$ coverage) ---
+about $5\%$ narrower than our method at comparable coverage, confirming that the
+transductive efficiency advantage reported here is not unique to this specific
+partition-based construction.
 
 \begin{figure}[ht]
 \centering
@@ -974,17 +1027,23 @@ Gaussian split conformal & $91.2 \pm 0.0$ & $1.683 \pm 0.006$ \\
 CQR (cubic) & $91.2 \pm 0.0$ & $1.490 \pm 0.006$ \\
 CQR-QRF & $91.4 \pm 0.0$ & $1.333 \pm 0.006$ \\
 CQR-IDR & $91.4 \pm 0.0$ & $1.294 \pm 0.007$ \\
+CHR~\citep{SesiaRomano2021} & $90.6 \pm 0.1$ & $1.312 \pm 0.009$ \\
 \hline
 \textbf{Our method (full $n$)} & $90.6 \pm 0.1$ & $1.217 \pm 0.002$ \\
+QOOB (full $n$)~\citep{GuptaEtAl2022} & $92.5 \pm 0.1$ & $1.157 \pm 0.001$ \\
 \hline
 \end{tabular}
 \caption{Old Faithful ($n=272$): empirical coverage and mean width of
   prediction intervals at nominal level $1-\varepsilon = 0.90$,
   averaged over $R=200$ random 50/50 splits ($\pm$ one standard error).
   \emph{Top block}: all methods use the same training half ($n/2$);
-  \textit{Our method ($n/2$)} is directly comparable to the competitors.
+  \textit{Our method ($n/2$)} is directly comparable to the competitors;
+  CHR~\citep{SesiaRomano2021} uses the same quantile-regression-forest
+  grey-box as CQR-QRF (Appendix~\ref{app:chr}).
   \emph{Below the line}: \textbf{Our method (full $n$)} uses all $n$
-  observations, a design advantage inherent to full-data conformal methods.}
+  observations, a design advantage inherent to full-data conformal methods;
+  QOOB~\citep{GuptaEtAl2022} is a different transductive (full-data) method,
+  included as an additional comparison at the same data-usage regime.}
 \label{tab:faithful_coverage}
 \end{table}
 
@@ -1015,8 +1074,11 @@ Figure~\ref{fig:mcycle_intervals} and Table~\ref{tab:mcycle_coverage}
 compare prediction intervals averaged over $R=200$ random 50/50 splits.
 In the matched-sample comparison (top block), Gaussian split conformal is
 drastically inefficient ($172.4$ g), CQR (cubic) and CQR-IDR are moderately
-better ($134.1$ g and $127.6$ g respectively), and CQR-QRF adapts most
-flexibly ($87.9$ g).
+better ($134.1$ g and $127.6$ g respectively), and CQR-QRF and
+CHR~\citep{SesiaRomano2021} adapt most flexibly ($87.9$ g and $84.5$ g
+respectively); as on Old Faithful, CHR is narrower than CQR-QRF with an
+identical grey-box (Appendix~\ref{app:chr}), here also at closer-to-nominal
+coverage ($91.3 \pm 0.2\%$ vs.\ $93.1 \pm 0.1\%$).
 Our method on the same training half (italic row, $n_{\rm tr} = 66$)
 yields mean width $100.6$ g with sub-nominal coverage ($86.9 \pm 0.5\%$);
 at this small sample size, CQR-QRF achieves narrower intervals, reflecting
@@ -1025,7 +1087,12 @@ fewer observations per bin produce a coarser within-bin ECDF and wider intervals
 When all $n$ observations are used (bold row, below the line), our method
 achieves $90.3 \pm 0.2\%$ coverage with mean width $77.3$ g, narrower than
 all competitors.
-All split-conformal methods exceed nominal coverage ($92.5$--$93.1\%$).
+All split-conformal methods exceed nominal coverage ($91.3$--$93.1\%$).
+Among full-data transductive competitors, QOOB~\citep{GuptaEtAl2022} is
+comparable ($75.8 \pm 0.2$ g at $92.5 \pm 0.2\%$ coverage) --- a similar width
+achieved with a larger coverage margin; on this dataset $15\%$ of QOOB's
+prediction sets are non-convex (up to $10$ disjoint segments), unlike our
+method's single-interval sets observed throughout.
 
 \begin{figure}[ht]
 \centering
@@ -1060,17 +1127,23 @@ Gaussian split conformal & $92.5 \pm 0.0$ & $172.4 \pm 1.0$ \\
 CQR (cubic) & $92.5 \pm 0.0$ & $134.1 \pm 1.5$ \\
 CQR-QRF & $93.1 \pm 0.1$ & $87.9 \pm 0.7$ \\
 CQR-IDR & $92.7 \pm 0.0$ & $127.6 \pm 0.6$ \\
+CHR~\citep{SesiaRomano2021} & $91.3 \pm 0.2$ & $84.5 \pm 1.0$ \\
 \hline
 \textbf{Our method (full $n$)} & $90.3 \pm 0.2$ & $77.3 \pm 0.2$ \\
+QOOB (full $n$)~\citep{GuptaEtAl2022} & $92.5 \pm 0.2$ & $75.8 \pm 0.2$ \\
 \hline
 \end{tabular}
 \caption{Motorcycle accident ($n=133$): empirical coverage and mean width of
   prediction intervals at nominal level $1-\varepsilon = 0.90$,
   averaged over $R=200$ random 50/50 splits ($\pm$ one standard error).
   \emph{Top block}: all methods use the same training half ($n/2$);
-  \textit{Our method ($n/2$)} is directly comparable to the competitors.
+  \textit{Our method ($n/2$)} is directly comparable to the competitors;
+  CHR~\citep{SesiaRomano2021} uses the same quantile-regression-forest
+  grey-box as CQR-QRF (Appendix~\ref{app:chr}).
   \emph{Below the line}: \textbf{Our method (full $n$)} uses all $n$
-  observations, a design advantage inherent to full-data conformal methods.}
+  observations, a design advantage inherent to full-data conformal methods;
+  QOOB~\citep{GuptaEtAl2022} is a different transductive (full-data) method,
+  included as an additional comparison at the same data-usage regime.}
 \label{tab:mcycle_coverage}
 \end{table}
 
@@ -1079,13 +1152,19 @@ CQR-IDR & $92.7 \pm 0.0$ & $127.6 \pm 0.6$ \\
 \section{Additional considerations}
 \label{sec:additional}
 \paragraph{Limitations.}
-In terms of scalability, it is important to note that the DP binning step has
-$O(n^2 K)$ time complexity and $O(n^2)$ storage requirement, which may be
+In terms of scalability, it is important to note that the DP binning step has 
+$O(n^2 K)$ time complexity and $O(n^2)$ storage requirement, which may be 
 prohibitive for large datasets.
 The method applies only to the case of a one-dimensional covariate and a contiguous binning structure.
 In small samples the CV criterion can select a large $K$, resulting in bins with
 few observations and hence coarse prediction intervals; this is a feature of the
 bias-variance tradeoff under limited data, not a failure of validity.
+The method also assumes approximate local homogeneity of the conditional
+distribution within each bin; Section~\ref{sec:bias-variance} and
+Appendix~\ref{app:exch} analyse the resulting bias--variance trade-off in $K$,
+and the Old Faithful comparison against QOOB (Section~\ref{sec:realdata})
+illustrates a real, if modest, efficiency cost when a smooth transition is
+approximated by hard bin boundaries.
 
 \paragraph{Multi-dimensional extension.}
 The LOO-CRPS cost $W(S)\cdot m/(m-1)^2$ can in principle be extended to multivariate data, but DP tractability
@@ -1122,8 +1201,8 @@ the population $\overline{\mathrm{TestCRPS}}(K)$ have a unique minimum?
 \section{Conclusion}
 \label{sec:conclusion}
 
-We have presented a method for non-parametric conditional distribution estimation
-that combines three independently motivated ideas into a coherent pipeline: optimal
+We have presented a non-parametric, model-free method for conditional distribution
+estimation that combines three independently motivated ideas into a coherent pipeline: optimal
 bin-boundary placement by LOO-CRPS minimisation, cross-validated bin-count selection,
 and conformal prediction using the within-bin ECDF as both the predictive distribution
 and the nonconformity score.
@@ -1155,11 +1234,23 @@ competitors) shows the cost of halving the data: on Old Faithful the method rema
 narrower than all competitors; on the motorcycle dataset ($n/2=66$, coverage
 $86.9 \pm 0.5\%$) CQR-QRF achieves modestly narrower intervals ($87.9$ vs $100.5$ g),
 reflecting the small-sample bias-variance regime.
+Against QOOB~\citep{GuptaEtAl2022}, another transductive full-data method, the
+picture is mixed: QOOB is $\sim\!5\%$ narrower on Old Faithful at comparable
+coverage, and closely comparable on the motorcycle dataset --- evidence that the
+efficiency gains reported above stem from this specific closed-form partitioning
+construction rather than from transductive calibration per se.
+
+The margin over the two parametric baselines reflects dataset mismatch, not a
+general property of the method; the fairer test is against the non-parametric
+competitors, where the results above are mixed --- notably with only $K$ as a
+tuning parameter, against considerably more complex alternatives.
 
 \section*{Acknowledgements}
 
 The author acknowledges Prof. Alexander Gammerman for his helpful guidance and Matteo Fontana
 for providing pointers to relevant prior work.
+The author also thanks the anonymous reviewers for comments that prompted a substantially
+more rigorous and honestly reported set of empirical comparisons in this revision.
 The author used Claude (Anthropic) as a writing and coding assistant during the
 preparation of this manuscript.
 Claude assisted with drafting and editing prose, implementing experiment scripts,
@@ -1232,7 +1323,7 @@ Subtracting and simplifying,
 \section{Algorithm Pseudocode and Implementation Details}
 \label{app:impl}
 \paragraph {Pseudocode.}
-The pseudocode in Algorithm~\ref{alg:dp} on page~\pageref{alg:dp} implements the DP algorithm for computing
+The pseudocode in Algorithm~\ref{alg:dp} on page~\pageref{alg:dp} implements the DP algorithm for computing 
 the CRPS-optimal $K$-partition.
 
 \begin{algorithm2e}[htp]
@@ -1299,7 +1390,7 @@ would be monotone in $j$, enabling $O(n)$ per DP row and total $O(nK)$.
 However, the LOO-CRPS cost violates the QI already at $n=4$:
 for $\mathbf{y}=(0,0,0,0,0,1,1,1,1,1)$ and $(a,b,c,d)=(1,4,5,6)$
 the inequality fails by a gap of $0.30$.
-One could view this as a consequence of the $m/(m-1)^2$ prefactor which makes the
+One could view this as a consequence of the $m/(m-1)^2$ prefactor which makes the 
 cost disproportionately sensitive to small bins.
 
 % ------------------------------------------------------------
@@ -1545,5 +1636,86 @@ pairwise comparison.
 The two criteria are therefore identical for all purposes that matter: same
 minimiser, same ranking of candidate partitions, same variance of the
 model-selection statistic.
+
+% ------------------------------------------------------------
+\section{Implementation and Benchmarking Details for the CHR Comparison}
+\label{app:chr}
+
+We document the CHR~\citep{SesiaRomano2021} implementation and benchmarking %choices
+%in more detail than the main text has room for%, so that the comparison in
+%Section~\ref{sec:realdata} can be checked and, if needed, disputed on its merits.
+to facilitate reproducibility and to clarify the choices made in the absence of published
+numbers for these two datasets.
+
+\paragraph{Reimplementation.}
+No official PyPi package exists for CHR, and the reference implementation
+(\url{https://github.com/msesia/chr}) carries no LICENSE file. Rather than
+redistribute that code, we wrote an independent reimplementation from the published
+algorithm and from reading the public reference source, without copying it.
+The reference code implements two prediction modes on its histogram accumulator: an
+\emph{interval} mode (the shortest contiguous run of histogram bins whose estimated
+mass reaches the target coverage) and a density-ranked \emph{set} mode that can, in
+principle, return disconnected regions. It appears that only the interval mode is exercised by the
+reference's own real-data experiments;  consequently, we implement only the interval mode, matching
+what the paper actually reports.
+
+Note that CHR requires a black-box conditional-quantile regressor. We decided to use the same
+\texttt{quantile\_forest}-based quantile regression forest already used for CQR-QRF
+elsewhere in this comparison, with the identical configuration
+($500$ trees, \texttt{min\_samples\_leaf}$=5$) not separately tuned for CHR. This
+was a deliberate choice: holding the ``grey-box'' fixed isolates whatever the
+histogram/shortest-window construction contributes over plain CQR wrapping of the
+same regressor, rather than conflating it with a base-learner difference.
+
+\paragraph{Resolution parameters.}
+We discretize the response into $200$ histogram bins (the reference's own default,
+$1000$, was tuned for real-dataset calibration sets of $n_{\rm cal}=2000$ and is
+unnecessary at our $n\sim 100$--$150$) and use the reference's default calibration
+grid resolution ($\Delta\alpha = 0.001$) for the nested-interval family used to
+compute conformity scores. 
+%This finer resolution was not an arbitrary match to the
+%reference: an earlier attempt at a $10\times$ coarser grid, chosen for speed,
+%occasionally caused a calibration point on the heteroscedastic motorcycle dataset
+%--- one whose true response fell outside the grey-box's predicted 1st--99th
+%percentile range, a real feature of that dataset's sharp variance transition --- to
+%saturate at the grid's coarsest achievable score, inflating the resulting interval to
+%nearly the full data range on a small fraction of splits. The finer, reference-matching
+%resolution resolved this cleanly and is used throughout.
+
+\paragraph{Randomization.}
+The reference implementation defaults to a boundary-bin randomization step that
+shaves one histogram bin at the interval's edge with a per-point random probability,
+sharpening coverage toward the exact nominal level. We do not use it, for consistency
+with the other split-conformal competitors in this comparison, none of which use a
+randomized construction. It can be argued that omitting it makes split-conformal methods, CHR included,
+slightly conservative rather than exact. %; if this choice biases the comparison at all,
+%it biases it against CHR, not in our favor.
+
+\paragraph{Validation against the reference implementation.}
+Reimplementing CHR is non-trivial, so it is critical that our implementation be validated.
+No published numbers exist for CHR on the two datasets used here (the original paper's
+real-data experiments use a different benchmark suite), so we validated our
+reimplementation directly: we ran the actual reference code locally (as a
+correctness oracle only, never redistributed) with the identical grey-box, data,
+and splits. Aggregate coverage and mean width match closely and are consistent
+with the numbers reported above (e.g.\ mcycle, $15$ splits: $91.4\%/90.8$g
+reference vs.\ $91.7\%/88.0$g ours). Individual intervals agree less exactly ---
+median endpoint differences are small, but a minority of points, mostly on the
+smaller motorcycle calibration set, differ by tens of grams. We traced this to
+the shared window-search algorithm (verified identical by cross-feeding each
+implementation's histogram into the other's scoring code) being sensitive to
+sub-percent histogram-construction differences in sparse regions created by the
+grey-box's discretized quantile predictions, amplified by the small calibration
+set ($n_{\rm cal}=67$). We believe that the resulting discrepancies doe not affect
+coverage validity, which holds by conformal exchangeability regardless of 
+implementation, and only marginally affect the aggregate width already reported.
+
+\paragraph{Protocol.}
+CHR is evaluated with the identical $R=200$ random 50/50 splits, seed convention,
+and $\varepsilon=0.10$ nominal level as the other split-conformal competitors in
+Tables~\ref{tab:faithful_coverage} and~\ref{tab:mcycle_coverage}: fit on the training
+half, calibrate and evaluate on the calibration half. Code is included in the
+accompanying repository (\texttt{experiments/chr.py},
+\texttt{experiments/chr\_benchmark.py}).
 
 \end{document}
